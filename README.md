@@ -13,3 +13,7 @@ home announce each time somebody ring the doorbell.  We have 3 stories home, and
 doorbell when we're in our basement or upstairs in bedroom with door closed or with TV on.  We have 4 google home mini
 in our house from basement to upstairs. By making google homes announce a doorbell, we know immediately anywhere in 
 the house if somebody ring the doorbell.
+
+References:
+Doorbell wiring diagrams:
+   https://diyhousehelp.com/how-to/doorbell-wiring-diagrams
