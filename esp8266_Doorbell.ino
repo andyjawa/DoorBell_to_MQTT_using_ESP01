@@ -11,27 +11,32 @@
 
 
 //EDIT THESE LINES TO MATCH YOUR SETUP
-#define MQTT_SERVER "192.168.10.100"
+#define MQTT_SERVER "10.0.0.30"
+// Debug level: 0 (no debug), 1 (standard), 2 (detailed)
+int debug = 0;
+boolean SerialEnabled = false;
 
-char ssid[]= "SSID1";
-char password[]= "MYSSIDpassword";
-const char* ssid1 = "SSID";
-const char* password1 = "MYSSIDpassword";
-const char* ssid2 = "SSID1";
-const char* password2 = "MYSSIDpassword";
-const int DiagPin = LED_BUILTIN;
+char* ssid1 = "MySSID";
+char* password1 = "MySSIDpassword";
+char* ssid2 = "MySSID1";
+char* password2 = "MySSIDpassword";
+char* ssid = ssid1;
+char* password = password1;
 
 // GPIO-0 defined as LEDPin is not currently used, reserved for future use
 const int LEDPin = 0;
 const int DoorBellPin = 2;
+const int DiagPin = LED_BUILTIN;
+// LED_BUILTIN in ESP-01 is GPIO-1 (also used as Serial TX), it's reverse logic ON=LOW
+
 int LastDoorBellState = HIGH;
 int CurrentDoorBellState = HIGH;
 int TimerFlag=false;
-
 // TimerFlag2 is used for a timer to prevent repeated MQTT msgs being sent out due to 
 // doorbell switch being repeatedly pressed in quick succession.
 int TimerFlag2=false;
 char Uptime[]="{\"Uptime\":\"00000000\"}";  
+unsigned long time2;
 
 const char* CPUstateTopic = "stat/DoorBell/LWT";
 const char* DoorBellInfoTopic = "stat/DoorBellInfo";
@@ -41,6 +46,7 @@ const char* DoorBellResetTopic = "cmnd/DoorBellCPUreset";
 const char* DoorBellPressedTopic = "tele/FrontDoorBell";
 
 void callback(char* topic, byte* payload, unsigned int length);
+void reconnect();
 boolean debounce1(boolean last);
 String macToStr(const uint8_t* mac);
 
@@ -58,13 +64,17 @@ void timer0_ISR (void){
 void setup() {
   delay(1000);
   //initialize the light as an output and set to LOW (off)
-  pinMode(DiagPin, OUTPUT);
+  if (!SerialEnabled) {pinMode(DiagPin, OUTPUT);}
   pinMode(LEDPin, OUTPUT);
   pinMode(DoorBellPin, INPUT);
   digitalWrite(LEDPin, LOW);
 
   //start the serial line for debugging
-  Serial.begin(115200);
+  if (debug>=1) { 
+    Serial.begin(115200);
+    Serial.println("Booting");
+    SerialEnabled = true;
+  }  
   delay(500);
 
   noInterrupts();
@@ -74,16 +84,14 @@ void setup() {
   interrupts();
 
 //start wifi subsystem
-  strcpy(ssid,ssid1);
-  strcpy(password,password1);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 //attempt to connect to the WIFI network and then connect to the MQTT server
   reconnect();
 //wait a bit before starting the main loop
   delay(2000);
+  time2 = millis()+1000;
 }
-
 
 
 void loop(){
@@ -98,8 +106,8 @@ void loop(){
         client.publish(CPUstateTopic,"Online",true);
         sprintf (Uptime, "{\"Uptime\":\"%d\"}", millis()/1000);
         client.publish(DoorBellInfoTopic,Uptime);
-        Serial.print(" esp1 uptime: ");
-        Serial.println(Uptime);
+        if (debug>=1) {Serial.print(" esp1 uptime: ");}
+        if (debug>=1) {Serial.println(Uptime);}
       }
       TimerCount=0;
     }
@@ -111,7 +119,7 @@ void loop(){
   if (LastDoorBellState != CurrentDoorBellState) {
     if (CurrentDoorBellState==LOW) {
       if (TimerCount2>=4) {   
-        client.publish(DoorBellPressedTopic,"ON");
+        client.publish(DoorBellPressedTopic, "ON");
         TimerCount2=0;
       }
     }
@@ -139,17 +147,18 @@ void callback(char* topic, byte* payload, unsigned int length) {
   char msg[30];
 
   //Print out some debugging info
-  Serial.println("Callback update.");
-  Serial.print("Topic: ");
-  Serial.println(topicStr);
-  Serial.println(payload[0]);
-
+  if (debug>=1) {
+    Serial.println("Callback update.");
+    Serial.print("Topic: ");
+    Serial.println(topicStr);
+    Serial.println(payload[0]);
+  }
   if((topicStr == DoorBellInfoReqTopic) && (payload[0] == 49)){ 
     client.publish(CPUstateTopic,"Online",true);
     sprintf (Uptime, "{\"Uptime\":\"%d\"}", millis()/1000);
     client.publish(DoorBellInfoTopic,Uptime);
-    Serial.print(" Doorbell ESP1 uptime: ");
-    Serial.println(Uptime);
+    if (debug>=1) {Serial.print(" Doorbell ESP1 uptime: ");}
+    if (debug>=1) {Serial.println(Uptime);}
   }
   if((topicStr==DoorBellRestartTopic) && (payload[0] == 49)){ ESP.restart();}
   if((topicStr==DoorBellResetTopic) && (payload[0] == 49)){ ESP.reset();}
@@ -162,50 +171,49 @@ void reconnect() {
   //attempt to connect to the wifi if connection is lost
   if(WiFi.status() != WL_CONNECTED){
     //debug printing
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
+    if (debug>=1) {Serial.print("Connecting to ");}
+    if (debug>=1) {Serial.println(ssid);}
 
     //loop while we wait for connection
     while (WiFi.status() != WL_CONNECTED) {
       delay(500);
-      digitalWrite(DiagPin, DiagState);
+      if (!SerialEnabled) {digitalWrite(DiagPin, DiagState);}
       attempt++;
-      Serial.println(attempt);
+      if (debug>=1) {Serial.println(attempt);}
       if(attempt%30==0){
         if(ssid==ssid1){
-           strcpy(ssid,ssid2);
-           strcpy(password,password2);
+          ssid=ssid2;
+          password=password2;
         } else {
-           strcpy(ssid,ssid1);
-           strcpy(password,password1);
+          ssid=ssid1;
+          password=password1;
         }
         WiFi.disconnect();
         WiFi.begin(ssid, password);
-        Serial.print("Switching SSID to ");
-        Serial.println(ssid);
+        if (debug>=1) {Serial.print("Switching SSID to ");}
+        if (debug>=1) {Serial.println(ssid);}
       }
       if(attempt>120){ESP.restart();}
-      Serial.print("WiFi.status()=");
-      Serial.print(WiFi.status());
-      Serial.print(" Attempt=");
-      if(DiagState>60){ 
-        DiagState=0; 
-        Serial.println();
-      }
+      if (debug>=1) {Serial.print("WiFi.status()=");}
+      if (debug>=1) {Serial.print(WiFi.status());}
+      if (debug>=1) {Serial.print(" Attempt=");}
       DiagState+=1;
+      if(DiagState>1){DiagState=0;}
     }
     //print out some more debug once connected
-    Serial.println("");
-    Serial.println("WiFi connected");  
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
+    if (debug>=1) {
+      Serial.println("");
+      Serial.println("WiFi connected");  
+      Serial.println("IP address: ");
+      Serial.println(WiFi.localIP());
+    }
   }
   //make sure we are connected to WIFI before attemping to reconnect to MQTT
   if(WiFi.status() == WL_CONNECTED){
   // Loop until we're reconnected to the MQTT server
     attempt=0;
     while (!client.connected()) {
-      Serial.print("Attempting MQTT connection...");
+      if (debug>=1) {Serial.print("Attempting MQTT connection...");}
 
       // Generate client name based on MAC address and last 8 bits of microsecond counter
       String clientName;
@@ -217,8 +225,8 @@ void reconnect() {
       if(attempt>20){ESP.reset();}
       //if connected, subscribe to the topic(s) we want to be notified about
       if (client.connect((char*) clientName.c_str(),CPUstateTopic,2,true,"Offline")) {
-        Serial.println("\tMQTT Connected");
-        digitalWrite(DiagPin, LOW);
+        if (debug>=1) {Serial.println("\tMQTT Connected");}
+        if (!SerialEnabled) {digitalWrite(DiagPin, HIGH);}
         client.publish(CPUstateTopic,"Online",true);
         client.subscribe(DoorBellRestartTopic);
         client.subscribe(DoorBellResetTopic);
@@ -226,7 +234,7 @@ void reconnect() {
 
   // otherwise print failed for debugging
       } else {
- //       Serial.println("\tFailed."); 
+ //       if (debug>=1) {Serial.println("\tFailed."); }
         abort();
       }
     }
@@ -258,4 +266,3 @@ boolean debounce1(boolean last)
   }
   return current;
 }
-
